@@ -1,15 +1,16 @@
-var csv = require('csv');
-var JSONStream = require('JSONStream');
-var fs = require('fs');
-var _ = require('lodash');
+const csv = require('csv');
+const JSONStream = require('JSONStream');
+const fs = require('fs');
+const _ = require('lodash');
 
-var columns = ['id', 'name', 'city', 'country', 'iata', 'icao', 'latitude', 'longitude', 'altitude', 'timezone', 'dst', 'tz'];
+// const columns = ['id', 'name', 'city', 'country', 'iata', 'icao', 'latitude', 'longitude', 'altitude', 'timezone', 'dst', 'tz'];
+const columns = ['id', 'name', 'city', 'country', 'iata', 'icao'];
 
-var readStream = fs.createReadStream('airports.dat');
-var writeStream = fs.createWriteStream('airports.json');
+const readStream = fs.createReadStream('airports.dat');
+const writeStream = fs.createWriteStream('airports.json');
 
-var transformer = csv.transform(function(data) {
-  return _.object(columns, data);
+const transformer = csv.transform(function(data) {
+  return _.zipObject(columns, data);
 });
 
 readStream

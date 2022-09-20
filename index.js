@@ -1,8 +1,26 @@
-var airportsJSON = require('./airports.json');
-var Backbone = require('backbone');
+const airports = require('./airports.json');
 
-var airports = new Backbone.Collection(airportsJSON);
+const getAirportFromIATACode = (iataCode) => {
+  return airports.find((s) => s.iata === iataCode) || null;
+};
 
-airports.comparator = 'name';
+const getCityFromIATACode = (iataCode) => {
+  const airport = getAirportFromIATACode(iataCode);
+  if (airport) {
+    return airport.city;
+  }
+  return null;
+}
 
-module.exports = airports;
+const getCountryFromIATACode = (iataCode) => {
+  const airport = getAirportFromIATACode(iataCode);
+  if (airport)
+    return airport.country;
+  return null;
+}
+
+module.exports = {
+  getAirportFromIATACode,
+  getCityFromIATACode,
+  getCountryFromIATACode,
+};
