@@ -4,7 +4,7 @@ const fs = require('fs');
 const _ = require('lodash');
 
 // const columns = ['id', 'name', 'city', 'country', 'iata', 'icao', 'latitude', 'longitude', 'altitude', 'timezone', 'dst', 'tz'];
-const columns = ['id', 'name', 'city', 'country', 'iata', 'icao'];
+const columns = ['id', 'name', 'city', 'country', 'iata', 'icao', 'latitude', 'longitude'];
 
 const readStream = fs.createReadStream('airports.dat');
 const writeStream = fs.createWriteStream('airports.json');
