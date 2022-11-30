@@ -24,6 +24,9 @@ require('airport-codes/airports.json');
 $ wget https://raw.githubusercontent.com/jpatokal/openflights/master/data/airports.dat
 ```
 
+TODO: merge with `https://davidmegginson.github.io/ourairports-data/airports.csv`
+
+
 ### Generate the list
 
 Convert the list of airport codes from csv format to JSON.
