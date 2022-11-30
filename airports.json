@@ -15395,5 +15395,5 @@
 ,
 {"id":"14110","name":"Melitopol Air Base","city":"Melitopol","country":"Ukraine","iata":"\\N","icao":"UKDM","latitude":"46.880001","longitude":"35.305"}
 ,
-{"id":"14111","name":"Berlin Brandenburg Airport","city":"Berline","country":"Germany","iata":"BER","icao":"\\N","latitude":"52.362247","longitude":"13.500672,157"}
+{"id":"14111","name":"Berlin Brandenburg Airport","city":"Berlin","country":"Germany","iata":"BER","icao":"\\N","latitude":"52.362247","longitude":"13.500672,157"}
 ]
