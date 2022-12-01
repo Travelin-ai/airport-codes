@@ -24,6 +24,8 @@
   "dependencies": {
     "JSONStream": "^1.0.4",
     "csv": "^0.4.5",
+    "csvtojson": "^2.0.10",
+    "i18n-iso-countries": "^7.5.0",
     "lodash": "^2.4.2"
   }
 }
