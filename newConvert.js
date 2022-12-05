@@ -7,7 +7,6 @@ countries.registerLocale(require("i18n-iso-countries/langs/en.json"));
 
 const airports1 = require("./airports.json");
 
-
 const reduce = (arr1, arr2,prop) => {
     return arr1.map((obj) => {
       const numbers = arr2.filter((nums) => nums[prop] === obj[prop]);
@@ -59,4 +58,5 @@ const csvtojson = () => {
     }
 };
 
-csvtojson();
+module.exports = { csvtojson }
+
