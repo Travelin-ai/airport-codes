@@ -1,6 +1,6 @@
 {
   "name": "airport-codes",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Airport codes (IATA) and information pulled from OpenFlights.org.",
   "main": "index.js",
   "scripts": {
@@ -21,9 +21,11 @@
     "url": "https://github.com/Travelin-ai/airport-codes/issues"
   },
   "homepage": "https://github.com/Travelin-ai/airport-codes",
-  "dependencies": {
+  "devDependencies": {
     "JSONStream": "^1.0.4",
     "csv": "^0.4.5",
+    "csvtojson": "^2.0.10",
+    "i18n-iso-countries": "^7.5.0",
     "lodash": "^2.4.2"
   }
 }
