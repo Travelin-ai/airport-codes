@@ -20,4 +20,4 @@ readStream
   .pipe(writeStream)
   .on('finish', function (err) {
      csvtojson()
-  });;
+  });

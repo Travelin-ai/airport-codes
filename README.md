@@ -25,6 +25,13 @@ $ wget https://raw.githubusercontent.com/jpatokal/openflights/master/data/airpor
 ```
 
 TODO: merge with `https://davidmegginson.github.io/ourairports-data/airports.csv`
+TODO2: merge with `https://raw.githubusercontent.com/lxndrblz/Airports/main/airports.csv`
+
+### Fetch City codes
+
+```
+$ wget https://raw.githubusercontent.com/lxndrblz/Airports/main/citycodes.csv
+```
 
 
 ### Generate the list
@@ -33,6 +40,7 @@ Convert the list of airport codes from csv format to JSON.
 
 ```
 node convert.js
+node convertCities.js
 ```
 
 ## Thanks
