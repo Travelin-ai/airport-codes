@@ -1679,7 +1679,7 @@
 1732,"Kaklıç Airport","Izmir","Turkey",\N,"LTFA",38.517601013183594,26.977399826049805,13,3,"E","Europe/Istanbul","airport","OurAirports"
 1733,"Selçuk Efes Airport","Izmir","Turkey",\N,"LTFB",37.95069885253906,27.32900047302246,10,3,"E","Europe/Istanbul","airport","OurAirports"
 1734,"Bălți International Airport","Saltsy","Moldova","BZY","LUBL",47.843056,27.777222,758,2,"E","Europe/Chisinau","airport","OurAirports"
-1735,"Chişinău International Airport","Chisinau","Moldova","KIV","LUKK",46.92770004272461,28.930999755859375,399,2,"E","Europe/Chisinau","airport","OurAirports"
+1735,"Chişinău International Airport","Chisinau","Moldova","RMO","LUKK",46.92770004272461,28.930999755859375,399,2,"E","Europe/Chisinau","airport","OurAirports"
 1736,"Ohrid St. Paul the Apostle Airport","Ohrid","Macedonia","OHD","LWOH",41.18,20.7423,2313,1,"E","Europe/Skopje","airport","OurAirports"
 1737,"Skopje Alexander the Great Airport","Skopje","Macedonia","SKP","LWSK",41.961601,21.621401,781,1,"E","Europe/Skopje","airport","OurAirports"
 1738,"Gibraltar Airport","Gibraltar","Gibraltar","GIB","LXGB",36.1511993408,-5.3496599197400005,15,1,"N","Europe/Gibraltar","airport","OurAirports"
