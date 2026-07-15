@@ -18,7 +18,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const CSVToJSON = require('csvtojson');
 const countries = require('i18n-iso-countries');
 // Pinned (exact) to the version the consuming api-gateway locks: newer
@@ -84,11 +84,11 @@ const COUNTRY_NAME_OVERRIDES = {
 
 function download(url, dest) {
   console.log(`Downloading ${url}\n  -> ${dest}`);
-  // -f makes curl exit non-zero on HTTP errors (so execSync throws) instead of
-  // silently saving an error page; --retry handles transient network failures.
-  execSync(`curl -fsSL --retry 3 -o ${JSON.stringify(dest)} ${JSON.stringify(url)}`, {
-    stdio: 'inherit',
-  });
+  // -f makes curl exit non-zero on HTTP errors (so execFileSync throws) instead
+  // of silently saving an error page; --retry handles transient network
+  // failures. execFileSync spawns curl directly (no shell), so no quoting is
+  // needed for dest/url.
+  execFileSync('curl', ['-fsSL', '--retry', '3', '-o', dest, url], { stdio: 'inherit' });
 }
 
 function loadOverrides() {
@@ -103,6 +103,10 @@ function loadOverrides() {
 }
 
 function getCountryName(isoCode) {
+  if (!isoCode) {
+    console.warn('WARNING: row with empty iso_country - emitting empty country.');
+    return '';
+  }
   if (Object.prototype.hasOwnProperty.call(COUNTRY_NAME_OVERRIDES, isoCode)) {
     return COUNTRY_NAME_OVERRIDES[isoCode];
   }
@@ -216,13 +220,13 @@ async function buildAirports() {
 
   airports = airports.map((a, i) => ({
     id: String(i + 1),
-    name: String(a.name),
-    city: String(a.city),
-    country: String(a.country),
-    iata: String(a.iata),
-    icao: String(a.icao),
-    latitude: String(a.latitude),
-    longitude: String(a.longitude),
+    name: String(a.name ?? ''),
+    city: String(a.city ?? ''),
+    country: String(a.country ?? ''),
+    iata: String(a.iata ?? ''),
+    icao: String(a.icao ?? ''),
+    latitude: String(a.latitude ?? ''),
+    longitude: String(a.longitude ?? ''),
   }));
 
   // Hard constraint (see COUNTRY_NAME_OVERRIDES): every emitted country name
@@ -244,9 +248,6 @@ async function buildAirports() {
 function buildCities() {
   const raw = fs.readFileSync(OTD_POR_PATH, 'utf8');
   const lines = raw.split('\n');
-  while (lines.length && lines[lines.length - 1].trim() === '') {
-    lines.pop();
-  }
   // Drop the header row - it must not be emitted as a data entry.
   const dataLines = lines.slice(1);
 
@@ -263,7 +264,7 @@ function buildCities() {
   const byCode = new Map();
 
   for (const line of dataLines) {
-    if (!line) {
+    if (!line || !line.trim()) {
       continue;
     }
     const fields = line.split('^');
