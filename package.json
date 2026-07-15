@@ -24,6 +24,7 @@
   },
   "homepage": "https://github.com/Travelin-ai/airport-codes",
   "devDependencies": {
+    "country-code-lookup": "0.0.22",
     "csvtojson": "^2.0.10",
     "i18n-iso-countries": "^7.5.0"
   }

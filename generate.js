@@ -21,6 +21,11 @@ const path = require('path');
 const { execSync } = require('child_process');
 const CSVToJSON = require('csvtojson');
 const countries = require('i18n-iso-countries');
+// Pinned (exact) to the version the consuming api-gateway locks: newer
+// releases rename countries (Turkey -> Türkiye, Czech Republic -> Czechia),
+// which would make the round-trip assertion below diverge from what
+// consumers actually run. Bump the two together.
+const countryCodeLookup = require('country-code-lookup');
 
 countries.registerLocale(require('i18n-iso-countries/langs/en.json'));
 
@@ -39,10 +44,13 @@ const AIRPORTS_JSON_PATH = path.join(REPO_DIR, 'airports.json');
 const CITIES_JSON_PATH = path.join(REPO_DIR, 'cities.json');
 const OVERRIDES_JSON_PATH = path.join(REPO_DIR, 'overrides.json');
 
-// i18n-iso-countries returns some official/long-form names that don't match
-// common usage. Override those here. Add more entries if getName() ever
-// returns undefined for a code encountered in the data (a warning will be
-// logged for those).
+// i18n-iso-countries returns some official/long-form names. Overrides serve
+// two purposes: common short forms for display, and — the hard constraint —
+// every emitted `country` must resolve back through country-code-lookup's
+// byCountry(), because consumers feed getCountryFromIATACode() output into
+// that exact library (policy country rules, agency market lookup, vehicle
+// vendor lookup). buildAirports() asserts this round-trip after generating
+// and fails the run if any name doesn't resolve.
 const COUNTRY_NAME_OVERRIDES = {
   US: 'United States',
   CN: 'China',
@@ -54,15 +62,24 @@ const COUNTRY_NAME_OVERRIDES = {
   LA: 'Laos',
   SY: 'Syria',
   MD: 'Moldova',
-  FM: 'Micronesia',
   MK: 'North Macedonia',
   VG: 'British Virgin Islands',
-  VI: 'U.S. Virgin Islands',
-  FK: 'Falkland Islands',
   BN: 'Brunei',
-  GM: 'Gambia',
-  PS: 'Palestine',
   SX: 'Sint Maarten',
+  // The names below are country-code-lookup's exact `country` strings — less
+  // pretty than the common short forms, but byCountry() matches nothing else.
+  WS: 'Western Samoa',
+  MM: 'Myanmar (Burma)',
+  BS: 'The Bahamas',
+  GM: 'The Gambia',
+  BQ: 'Bonaire',
+  FM: 'Federated States of Micronesia',
+  MO: 'Macau',
+  FK: 'Falkland Islands (Islas Malvinas)',
+  MF: 'Saint Martin',
+  XK: 'Republic of Kosovo',
+  VI: 'Virgin Islands',
+  PS: 'Palestinian Territory',
 };
 
 function download(url, dest) {
@@ -99,10 +116,31 @@ function getCountryName(isoCode) {
   return name;
 }
 
+// One row per IATA: the exported lookups are `find()`-based, so a duplicate
+// would resolve arbitrarily. The source is currently duplicate-free; if that
+// ever changes upstream, keep the row most likely to be the live airport.
+const TYPE_RANK = {
+  large_airport: 5,
+  medium_airport: 4,
+  small_airport: 3,
+  seaplane_base: 2,
+  heliport: 1,
+};
+
+function preferRow(a, b) {
+  const aScheduled = a.scheduled_service === 'yes' ? 1 : 0;
+  const bScheduled = b.scheduled_service === 'yes' ? 1 : 0;
+  if (aScheduled !== bScheduled) return aScheduled > bScheduled ? a : b;
+  const aRank = TYPE_RANK[(a.type || '').trim()] || 0;
+  const bRank = TYPE_RANK[(b.type || '').trim()] || 0;
+  if (aRank !== bRank) return aRank > bRank ? a : b;
+  return Number(a.id) <= Number(b.id) ? a : b;
+}
+
 async function buildAirports() {
   const rows = await CSVToJSON().fromFile(AIRPORTS_CSV_PATH);
 
-  let airports = [];
+  const byIata = new Map();
   for (const row of rows) {
     const iata = (row.iata_code || '').trim();
     if (!iata) {
@@ -114,6 +152,17 @@ async function buildAirports() {
       continue;
     }
 
+    const existing = byIata.get(iata);
+    if (existing) {
+      console.warn(`WARNING: duplicate iata_code "${iata}" in source data - keeping one row.`);
+      byIata.set(iata, preferRow(existing, row));
+    } else {
+      byIata.set(iata, row);
+    }
+  }
+
+  let airports = [];
+  for (const row of byIata.values()) {
     // Prefer the curated icao_code column; `ident` is an OurAirports internal id
     // for some rows (e.g. "AU-0456"). Fall back to gps_code when it looks like a
     // real ICAO code, then to ident as a last resort.
@@ -125,9 +174,13 @@ async function buildAirports() {
 
     airports.push({
       name: row.name,
-      city: row.municipality,
+      // Strip a trailing parenthetical - OurAirports municipalities carry
+      // qualifiers like "Oslo (Gardermoen)" or Italian province markers like
+      // "Orio al Serio (BG)". These are display strings in booking flows;
+      // lookups are by IATA, so the qualifier only adds noise.
+      city: (row.municipality || '').replace(/\s*\([^)]*\)\s*$/, ''),
       country: getCountryName(row.iso_country),
-      iata,
+      iata: (row.iata_code || '').trim(),
       icao,
       latitude: row.latitude_deg,
       longitude: row.longitude_deg,
@@ -172,6 +225,18 @@ async function buildAirports() {
     longitude: String(a.longitude),
   }));
 
+  // Hard constraint (see COUNTRY_NAME_OVERRIDES): every emitted country name
+  // must resolve through country-code-lookup's byCountry(). Fail the run
+  // rather than ship names the consuming code can't resolve.
+  const unresolvable = [...new Set(airports.map((a) => a.country))].filter(
+    (name) => !name || !countryCodeLookup.byCountry(name)
+  );
+  if (unresolvable.length) {
+    throw new Error(
+      `country names not resolvable via country-code-lookup.byCountry(): ${unresolvable.join(', ')} - add COUNTRY_NAME_OVERRIDES entries with that library's exact "country" strings.`
+    );
+  }
+
   fs.writeFileSync(AIRPORTS_JSON_PATH, JSON.stringify(airports));
   return airports;
 }
@@ -187,6 +252,7 @@ function buildCities() {
 
   // 0-based column indices in optd_por_public.csv (51 caret-separated columns).
   const IATA_IDX = 0;
+  const ENVELOPE_IDX = 5;
   const NAME_IDX = 6;
   const LAT_IDX = 8;
   const LON_IDX = 9;
@@ -204,6 +270,14 @@ function buildCities() {
     const iataCode = (fields[IATA_IDX] || '').trim();
     const locationType = (fields[LOC_TYPE_IDX] || '').trim();
     if (!iataCode || !locationType.includes('C')) {
+      continue;
+    }
+    // A non-empty envelope_id marks an expired/historical record (e.g. an
+    // IATA code's previous assignment). Without this filter ~300 expired
+    // rows leak in, and for reassigned codes the DEAD assignment can win
+    // over the live one (JSO would emit Södertälje/SE instead of the
+    // current Sobral/BR).
+    if ((fields[ENVELOPE_IDX] || '').trim() !== '') {
       continue;
     }
 
