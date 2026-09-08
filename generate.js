@@ -91,6 +91,56 @@ function download(url, dest) {
   execFileSync('curl', ['-fsSL', '--retry', '3', '-o', dest, url], { stdio: 'inherit' });
 }
 
+// Retired codes: a booking made while a code was current keeps that code for life (a PBI booked
+// in July still says PBI after IATA reassigned it to DJT on 2026-08-18), and the consuming
+// services look the airport up by that code for as long as the booking exists — trip type,
+// city names in emails, timezone maths, policy country rules. Upstream drops a code the day it
+// is retired, so every entry of the previously generated airports.json that the fresh build no
+// longer produces is carried forward, marked `retired: true`. Upstream always wins for a code it
+// still carries, so a reassigned code resolves to its current airport.
+function loadPreviousAirports() {
+  if (!fs.existsSync(AIRPORTS_JSON_PATH)) {
+    return [];
+  }
+  return JSON.parse(fs.readFileSync(AIRPORTS_JSON_PATH, 'utf8'));
+}
+
+// Country names in older entries were written straight from i18n-iso-countries ("Russian
+// Federation") and do not all satisfy the round-trip assertion in buildAirports(); re-resolve
+// them through the ISO code. Names i18n-iso-countries cannot reverse-map are listed here.
+const LEGACY_COUNTRY_ISO = {
+  'Johnston Atoll': 'UM',
+};
+
+function normalizeLegacyCountry(name) {
+  if (!name || countryCodeLookup.byCountry(name)) {
+    return name;
+  }
+  const iso = LEGACY_COUNTRY_ISO[name] || countries.getAlpha2Code(name, 'en');
+  return iso ? getCountryName(iso) : name;
+}
+
+function carryForwardRetired(airports, previousAirports) {
+  const known = new Set(airports.map((a) => a.iata));
+  const retired = [];
+  for (const previous of previousAirports) {
+    const iata = String(previous.iata || '').trim();
+    // '\\N' is the OpenFlights placeholder for "no IATA code" in pre-2026 entries.
+    if (!iata || iata === '\\N' || known.has(iata)) {
+      continue;
+    }
+    known.add(iata);
+    retired.push({
+      ...previous,
+      iata,
+      icao: previous.icao === '\\N' ? '' : previous.icao,
+      country: normalizeLegacyCountry(previous.country),
+      retired: true,
+    });
+  }
+  return retired;
+}
+
 function loadOverrides() {
   if (!fs.existsSync(OVERRIDES_JSON_PATH)) {
     return [];
@@ -142,6 +192,8 @@ function preferRow(a, b) {
 }
 
 async function buildAirports() {
+  // Read before this run overwrites it — see carryForwardRetired.
+  const previousAirports = loadPreviousAirports();
   const rows = await CSVToJSON().fromFile(AIRPORTS_CSV_PATH);
 
   const byIata = new Map();
@@ -212,6 +264,10 @@ async function buildAirports() {
     }
   }
 
+  const retired = carryForwardRetired(airports, previousAirports);
+  airports.push(...retired);
+  console.log(`Carried forward ${retired.length} retired IATA codes from the previous airports.json`);
+
   airports.sort((a, b) => {
     if (a.iata < b.iata) return -1;
     if (a.iata > b.iata) return 1;
@@ -227,6 +283,7 @@ async function buildAirports() {
     icao: String(a.icao ?? ''),
     latitude: String(a.latitude ?? ''),
     longitude: String(a.longitude ?? ''),
+    ...(a.retired ? { retired: true } : {}),
   }));
 
   // Hard constraint (see COUNTRY_NAME_OVERRIDES): every emitted country name
@@ -319,7 +376,9 @@ async function main() {
   const airports = await buildAirports();
   const cities = buildCities();
 
-  console.log(`Wrote ${AIRPORTS_JSON_PATH} (${airports.length} entries)`);
+  console.log(
+    `Wrote ${AIRPORTS_JSON_PATH} (${airports.length} entries, ${airports.filter((a) => a.retired).length} retired)`
+  );
   console.log(`Wrote ${CITIES_JSON_PATH} (${cities.length} entries)`);
 }
 

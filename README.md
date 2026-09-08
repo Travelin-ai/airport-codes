@@ -84,6 +84,20 @@ devDependency is pinned exactly (`0.0.22`) because consumers feed `getCountryFro
 output back through that library, and newer releases rename countries (e.g. Turkey → Türkiye);
 bump the pin only in lockstep with the consuming services.
 
+### Retired codes
+
+IATA occasionally retires or reassigns a code (Palm Beach's PBI became DJT on 2026-08-18), and
+OurAirports drops the old code the same day. Bookings made while a code was current keep it for
+life, and the consuming services look airports up by that code for as long as the booking exists.
+So `npm run generate` never removes a code: every entry of the previously committed
+`airports.json` that the fresh build no longer produces is carried forward, marked
+`retired: true` (the lookups ignore the flag; it is there for anything that must not offer a
+retired code to users). Upstream always wins for a code it still carries, so a code IATA
+reassigns resolves to its current airport.
+
+The 2026-09-09 regeneration seeded this carry-forward once with the pre-July `airports.json`
+(commit `1aeb4c1`), restoring the 256 codes the July full rebuild had silently dropped.
+
 ## Thanks
 
 - [Ram Nadella](https://github.com/ram-nadella/airport-codes)
