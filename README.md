@@ -84,6 +84,39 @@ devDependency is pinned exactly (`0.0.22`) because consumers feed `getCountryFro
 output back through that library, and newer releases rename countries (e.g. Turkey → Türkiye);
 bump the pin only in lockstep with the consuming services.
 
+### Retired codes
+
+IATA occasionally retires or reassigns a code (Palm Beach's PBI became DJT on 2026-08-18), and
+OurAirports drops the old code the same day. Bookings made while a code was current keep it for
+life, and the consuming services look airports up by that code for as long as the booking exists.
+So `npm run generate` never removes a code from `airports.json`: every entry of the previously
+committed file that the fresh build no longer produces is carried forward, marked
+`retired: true` (the lookups ignore the flag; it is there for anything that must not offer a
+retired code to users). Two exceptions, both logged as "Not carried forward":
+
+- Upstream always wins. A code OurAirports still carries resolves to its current airport, and a
+  code OpenTravelData now lists under another country was reassigned, so its previous entry is
+  dropped rather than resolve to the wrong country. That check reads every current OpenTravelData
+  record, not only cities: a code reassigned to a railway or bus station (BAU, once Bauru Airport
+  in Brazil, is now Bari Centrale Railway Station) has no city record.
+- Entries OurAirports marked `[Duplicate]` were data-quality removals, not retirements.
+
+In practice `retired` means "OurAirports no longer lists this code", not "IATA retired this code":
+most carried-forward entries are still current codes in OpenTravelData under the same country
+(many are railway and bus stations OurAirports never carried), some exist there only as expired
+records, and a few are in neither source.
+
+Retired entries are permanent otherwise, so each run prints the codes newly retired by that run;
+review them before committing (upstream removes the odd placeholder or test row too). Deleting an
+entry by hand from `airports.json` before regenerating is the way to drop one. `cities.json` has
+no carry-forward: it is rebuilt from OpenTravelData, whose expired records are already filtered
+out, and its `country_id` values are asserted to resolve through `country-code-lookup`'s
+`byIso()` because `getCountryFromIATACode()` falls back to them for city-only codes.
+
+The 2026-09-09 regeneration seeded this carry-forward once with the pre-July `airports.json`
+(commit `1aeb4c1`). The July full rebuild had silently dropped 256 codes; 4 of them upstream had
+re-added by September, the rest came back as retired entries.
+
 ## Thanks
 
 - [Ram Nadella](https://github.com/ram-nadella/airport-codes)
