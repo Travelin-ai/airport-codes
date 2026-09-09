@@ -3,5 +3,35 @@
     "iata": "SZT",
     "drop": true,
     "reason": "San Cristóbal de las Casas airport (Mexico) closed in 2010; OpenTravelData still carries a current record for it, so a retired entry would come back if ever re-seeded."
+  },
+  {
+    "iata": "DU9",
+    "drop": true,
+    "reason": "Dunnville Airport (Ontario) closed 2013-05-30 for a wind farm; DU9 was a Transport Canada identifier, never an IATA code."
+  },
+  {
+    "iata": "FBU",
+    "drop": true,
+    "reason": "Oslo Fornebu closed 1998-10-07, replaced by Gardermoen (OSL)."
+  },
+  {
+    "iata": "HDI",
+    "drop": true,
+    "reason": "Hardwick Field (Cleveland, Tennessee) closed 2013-12-31, replaced by Cleveland Regional Jetport; HDI was an FAA identifier, never an IATA code."
+  },
+  {
+    "iata": "LYM",
+    "drop": true,
+    "reason": "Lympne Airport (Kent) closed in 1984."
+  },
+  {
+    "iata": "NZJ",
+    "drop": true,
+    "reason": "Marine Corps Air Station El Toro closed 1999-07-02; NZJ was an FAA identifier, never an IATA code."
+  },
+  {
+    "iata": "OSP",
+    "drop": true,
+    "reason": "Słupsk-Redzikowo: no traffic since at least 2007, airfield demolished from 2016 for the Aegis Ashore site."
   }
 ]
