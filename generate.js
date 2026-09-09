@@ -97,12 +97,24 @@ function download(url, dest) {
 // city names in emails, timezone maths, policy country rules. Upstream drops a code the day it
 // is retired, so every entry of the previously generated airports.json that the fresh build no
 // longer produces is carried forward, marked `retired: true`. Upstream always wins for a code it
-// still carries, so a reassigned code resolves to its current airport.
+// still carries, so a reassigned code resolves to its current airport — and OpenTravelData is
+// consulted for the same reason: a code it now lists under another country was reassigned, and
+// the previous entry is that code's dead meaning, so it is not carried forward either.
 function loadPreviousAirports() {
+  // The carry-forward is only as good as this file. A missing or empty one would silently
+  // regenerate without any retired code, so fail instead of shipping that.
   if (!fs.existsSync(AIRPORTS_JSON_PATH)) {
-    return [];
+    throw new Error(
+      `${AIRPORTS_JSON_PATH} is missing; the retired-code carry-forward needs the previously committed file. Restore it (git checkout -- airports.json) before regenerating.`
+    );
   }
-  return JSON.parse(fs.readFileSync(AIRPORTS_JSON_PATH, 'utf8'));
+  const previous = JSON.parse(fs.readFileSync(AIRPORTS_JSON_PATH, 'utf8'));
+  if (!Array.isArray(previous) || !previous.length) {
+    throw new Error(
+      `${AIRPORTS_JSON_PATH} is empty; the retired-code carry-forward needs the previously committed file. Restore it (git checkout -- airports.json) before regenerating.`
+    );
+  }
+  return previous;
 }
 
 // Country names in older entries were written straight from i18n-iso-countries ("Russian
@@ -120,13 +132,33 @@ function normalizeLegacyCountry(name) {
   return iso ? getCountryName(iso) : name;
 }
 
-function carryForwardRetired(airports, previousAirports) {
+// `cityCountryByCode` is OpenTravelData's current code → ISO-2 country map (see buildCities).
+function carryForwardRetired(airports, previousAirports, cityCountryByCode) {
   const known = new Set(airports.map((a) => a.iata));
+  const previouslyRetired = new Set(
+    previousAirports.filter((a) => a.retired).map((a) => String(a.iata || '').trim().toUpperCase())
+  );
   const retired = [];
+  const dropped = [];
   for (const previous of previousAirports) {
-    const iata = String(previous.iata || '').trim();
+    const iata = String(previous.iata || '').trim().toUpperCase();
     // '\\N' is the OpenFlights placeholder for "no IATA code" in pre-2026 entries.
     if (!iata || iata === '\\N' || known.has(iata)) {
+      continue;
+    }
+    const country = normalizeLegacyCountry(previous.country);
+    // Reassigned code: OpenTravelData lists it today under another country (OEL: the previous
+    // entry says Oryol Yuzhny Airport, United States; today OEL is Orël, RU). Carrying the old
+    // entry forward would resolve the code to a wrong country with no warning — upstream wins.
+    const cityCountry = cityCountryByCode.get(iata);
+    const countryIso = countryCodeLookup.byCountry(country)?.iso2;
+    if (cityCountry && countryIso && cityCountry !== countryIso) {
+      dropped.push(`${iata} (reassigned: ${country} → ${cityCountry})`);
+      continue;
+    }
+    // Upstream's own duplicate markers are data-quality removals, not retirements.
+    if (/^\[Duplicate\]/i.test(String(previous.name || ''))) {
+      dropped.push(`${iata} (${previous.name})`);
       continue;
     }
     known.add(iata);
@@ -134,9 +166,25 @@ function carryForwardRetired(airports, previousAirports) {
       ...previous,
       iata,
       icao: previous.icao === '\\N' ? '' : previous.icao,
-      country: normalizeLegacyCountry(previous.country),
+      country,
       retired: true,
     });
+  }
+
+  // Every code that was retired last run is still current, still retired, or dropped by one of
+  // the two rules above — anything else means the carry-forward itself lost data.
+  const droppedIatas = new Set(dropped.map((d) => d.split(' ')[0]));
+  const lost = [...previouslyRetired].filter((iata) => !known.has(iata) && !droppedIatas.has(iata));
+  if (lost.length) {
+    throw new Error(`retired codes lost by the carry-forward without a rule: ${lost.join(', ')}`);
+  }
+
+  // Review gate: junk upstream removes (placeholder codes, test rows) would otherwise become
+  // permanent entries here without anyone noticing.
+  const newlyRetired = retired.filter((a) => !previouslyRetired.has(a.iata)).map((a) => a.iata);
+  console.log(`Newly retired this run (review before committing): ${newlyRetired.join(', ') || 'none'}`);
+  if (dropped.length) {
+    console.log(`Not carried forward: ${dropped.join('; ')}`);
   }
   return retired;
 }
@@ -191,7 +239,7 @@ function preferRow(a, b) {
   return Number(a.id) <= Number(b.id) ? a : b;
 }
 
-async function buildAirports() {
+async function buildAirports(cityCountryByCode) {
   // Read before this run overwrites it — see carryForwardRetired.
   const previousAirports = loadPreviousAirports();
   const rows = await CSVToJSON().fromFile(AIRPORTS_CSV_PATH);
@@ -264,7 +312,7 @@ async function buildAirports() {
     }
   }
 
-  const retired = carryForwardRetired(airports, previousAirports);
+  const retired = carryForwardRetired(airports, previousAirports, cityCountryByCode);
   airports.push(...retired);
   console.log(`Carried forward ${retired.length} retired IATA codes from the previous airports.json`);
 
@@ -365,6 +413,19 @@ function buildCities() {
   }
 
   const cities = Array.from(byCode.values()).map((v) => v.entry);
+
+  // getCountryFromIATACode() falls back to a city's `country_id` for the ~1,000 codes that are
+  // cities without an airport entry, and consumers resolve that value through
+  // country-code-lookup's byIso(). Fail the run if any of them would not resolve.
+  const unresolvable = [...new Set(cities.map((c) => c.country_id))].filter(
+    (iso) => !iso || iso.length !== 2 || !countryCodeLookup.byIso(iso)
+  );
+  if (unresolvable.length) {
+    throw new Error(
+      `city country_id values not resolvable via country-code-lookup.byIso(): ${unresolvable.join(', ')}`
+    );
+  }
+
   fs.writeFileSync(CITIES_JSON_PATH, JSON.stringify(cities));
   return cities;
 }
@@ -373,8 +434,11 @@ async function main() {
   download(AIRPORTS_CSV_URL, AIRPORTS_CSV_PATH);
   download(OTD_POR_URL, OTD_POR_PATH);
 
-  const airports = await buildAirports();
+  // Cities first: the airport carry-forward checks a retired code's country against
+  // OpenTravelData's current assignment (see carryForwardRetired).
   const cities = buildCities();
+  const cityCountryByCode = new Map(cities.map((c) => [c.code, c.country_id]));
+  const airports = await buildAirports(cityCountryByCode);
 
   console.log(
     `Wrote ${AIRPORTS_JSON_PATH} (${airports.length} entries, ${airports.filter((a) => a.retired).length} retired)`

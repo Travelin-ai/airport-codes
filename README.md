@@ -89,14 +89,26 @@ bump the pin only in lockstep with the consuming services.
 IATA occasionally retires or reassigns a code (Palm Beach's PBI became DJT on 2026-08-18), and
 OurAirports drops the old code the same day. Bookings made while a code was current keep it for
 life, and the consuming services look airports up by that code for as long as the booking exists.
-So `npm run generate` never removes a code: every entry of the previously committed
-`airports.json` that the fresh build no longer produces is carried forward, marked
+So `npm run generate` never removes a code from `airports.json`: every entry of the previously
+committed file that the fresh build no longer produces is carried forward, marked
 `retired: true` (the lookups ignore the flag; it is there for anything that must not offer a
-retired code to users). Upstream always wins for a code it still carries, so a code IATA
-reassigns resolves to its current airport.
+retired code to users). Two exceptions, both logged as "Not carried forward":
+
+- Upstream always wins. A code OurAirports still carries resolves to its current airport, and a
+  code OpenTravelData now lists under another country was reassigned, so its previous entry is
+  dropped rather than resolve to the wrong country.
+- Entries OurAirports marked `[Duplicate]` were data-quality removals, not retirements.
+
+Retired entries are permanent otherwise, so each run prints the codes newly retired by that run;
+review them before committing (upstream removes the odd placeholder or test row too). Deleting an
+entry by hand from `airports.json` before regenerating is the way to drop one. `cities.json` has
+no carry-forward: it is rebuilt from OpenTravelData, whose expired records are already filtered
+out, and its `country_id` values are asserted to resolve through `country-code-lookup`'s
+`byIso()` because `getCountryFromIATACode()` falls back to them for city-only codes.
 
 The 2026-09-09 regeneration seeded this carry-forward once with the pre-July `airports.json`
-(commit `1aeb4c1`), restoring the 256 codes the July full rebuild had silently dropped.
+(commit `1aeb4c1`). The July full rebuild had silently dropped 256 codes; 4 of them upstream had
+re-added by September, the rest came back as retired entries.
 
 ## Thanks
 
