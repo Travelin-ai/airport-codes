@@ -10,9 +10,14 @@
  *   - OpenTravelData optd_por_public.csv
  *     https://raw.githubusercontent.com/opentraveldata/opentraveldata/master/opentraveldata/optd_por_public.csv
  *
- * Usage: npm run generate  (or: node generate.js)
+ * Committed inputs read by every run: airports.csv (the OurAirports snapshot), overrides.json
+ * (manual corrections and the exclusion list) and retired.json (codes OurAirports no longer
+ * carries). airports.json and cities.json are outputs only; the build never reads them back.
  *
- * See README.md for details, including how overrides.json is applied.
+ * Usage: npm run generate               (or: node generate.js)
+ *        npm run generate -- --offline   rebuild from the files already on disk, no downloads
+ *
+ * See README.md for details, including how overrides.json and retired.json are applied.
  */
 
 const fs = require('fs');
@@ -30,6 +35,7 @@ const countryCodeLookup = require('country-code-lookup');
 countries.registerLocale(require('i18n-iso-countries/langs/en.json'));
 
 const REPO_DIR = __dirname;
+const OFFLINE = process.argv.includes('--offline');
 
 const AIRPORTS_CSV_URL = 'https://davidmegginson.github.io/ourairports-data/airports.csv';
 const OTD_POR_URL = 'https://raw.githubusercontent.com/opentraveldata/opentraveldata/master/opentraveldata/optd_por_public.csv';
@@ -43,6 +49,7 @@ const OTD_POR_PATH = path.join(os.tmpdir(), 'optd_por_public.csv');
 const AIRPORTS_JSON_PATH = path.join(REPO_DIR, 'airports.json');
 const CITIES_JSON_PATH = path.join(REPO_DIR, 'cities.json');
 const OVERRIDES_JSON_PATH = path.join(REPO_DIR, 'overrides.json');
+const RETIRED_JSON_PATH = path.join(REPO_DIR, 'retired.json');
 
 // i18n-iso-countries returns some official/long-form names. Overrides serve
 // two purposes: common short forms for display, and — the hard constraint —
@@ -91,116 +98,116 @@ function download(url, dest) {
   execFileSync('curl', ['-fsSL', '--retry', '3', '-o', dest, url], { stdio: 'inherit' });
 }
 
+function byIata(a, b) {
+  if (a.iata < b.iata) return -1;
+  if (a.iata > b.iata) return 1;
+  return 0;
+}
+
 // Retired codes: a booking made while a code was current keeps that code for life (a PBI booked
 // in July still says PBI after IATA reassigned it to DJT on 2026-08-18), and the consuming
 // services look the airport up by that code for as long as the booking exists — trip type,
 // city names in emails, timezone maths, policy country rules. Upstream drops a code the day it
-// is retired, so every entry of the previously generated airports.json that the fresh build no
-// longer produces is carried forward, marked `retired: true`. Upstream always wins for a code it
-// still carries, so a reassigned code resolves to its current airport — and OpenTravelData is
-// consulted for the same reason: a code it now lists under another country was reassigned, and
-// the previous entry is that code's dead meaning, so it is not carried forward either.
-function loadPreviousAirports() {
-  // The carry-forward is only as good as this file. A missing or empty one would silently
-  // regenerate without any retired code, so fail instead of shipping that.
-  if (!fs.existsSync(AIRPORTS_JSON_PATH)) {
+// is retired, so retired.json keeps every entry OurAirports no longer carries and the build
+// appends them to airports.json marked `retired: true`. The memory of what was current last run
+// is the committed airports.csv snapshot, read before the download overwrites it: the codes it
+// has that the fresh file lacks are this run's retirements, and they are added to retired.json —
+// one entry per line, so the file's diff is what a reviewer reads. Upstream always wins for a
+// code it carries again, and OpenTravelData is consulted for the same reason: a code it now lists
+// under another country was reassigned, and the retired entry is that code's dead meaning, so it
+// is removed rather than resolve to the wrong country.
+function loadRetired() {
+  // The carry-forward is only as good as this file. A missing one would silently regenerate
+  // without any retired code, so fail instead of shipping that.
+  if (!fs.existsSync(RETIRED_JSON_PATH)) {
     throw new Error(
-      `${AIRPORTS_JSON_PATH} is missing; the retired-code carry-forward needs the previously committed file. Restore it (git checkout -- airports.json) before regenerating.`
+      `${RETIRED_JSON_PATH} is missing; it holds the retired IATA codes. Restore it (git checkout -- retired.json) before regenerating.`
     );
   }
-  const previous = JSON.parse(fs.readFileSync(AIRPORTS_JSON_PATH, 'utf8'));
-  if (!Array.isArray(previous) || !previous.length) {
-    throw new Error(
-      `${AIRPORTS_JSON_PATH} is empty; the retired-code carry-forward needs the previously committed file. Restore it (git checkout -- airports.json) before regenerating.`
-    );
+  const retired = JSON.parse(fs.readFileSync(RETIRED_JSON_PATH, 'utf8'));
+  if (!Array.isArray(retired)) {
+    throw new Error(`${RETIRED_JSON_PATH} must be a JSON array of airport entries.`);
   }
-  return previous;
+  return retired;
 }
 
-// Country names in older entries were written straight from i18n-iso-countries ("Russian
-// Federation") and do not all satisfy the round-trip assertion in buildAirports(); re-resolve
-// them through the ISO code. Names i18n-iso-countries cannot reverse-map are listed here.
-const LEGACY_COUNTRY_ISO = {
-  'Johnston Atoll': 'UM',
-};
+const RETIRED_FIELDS = ['iata', 'name', 'city', 'country', 'icao', 'latitude', 'longitude'];
 
-function normalizeLegacyCountry(name) {
-  if (!name || countryCodeLookup.byCountry(name)) {
-    return name;
-  }
-  const iso = LEGACY_COUNTRY_ISO[name] || countries.getAlpha2Code(name, 'en');
-  return iso ? getCountryName(iso) : name;
+// One entry per line, sorted by code, so a pull request diff reads as "these codes were retired
+// (or removed) by this run".
+function writeRetired(retired) {
+  const lines = retired
+    .slice()
+    .sort(byIata)
+    .map((a) => JSON.stringify(Object.fromEntries(RETIRED_FIELDS.map((key) => [key, String(a[key] ?? '')]))));
+  fs.writeFileSync(RETIRED_JSON_PATH, `[\n${lines.join(',\n')}\n]\n`);
 }
 
-// `otdCountriesByCode` maps each IATA code to the ISO-2 countries of its current OpenTravelData
-// records (see buildCities).
-function carryForwardRetired(airports, previousAirports, otdCountriesByCode) {
-  const known = new Set(airports.map((a) => a.iata));
-  const previouslyRetired = new Set(
-    previousAirports.filter((a) => a.retired).map((a) => String(a.iata || '').trim().toUpperCase())
-  );
-  const retired = [];
-  const dropped = [];
+// `retired` is retired.json; `previous` the entries the committed airports.csv produced before
+// this run downloaded over it; `current` this run's entries after overrides; `excluded` the
+// codes overrides.json drops. `otdCountriesByCode` maps each IATA code to the ISO-2 countries of
+// its current OpenTravelData records (see buildCities).
+function reconcileRetired({ retired, previous, current, excluded, otdCountriesByCode }) {
+  const currentCodes = new Set(current.map((a) => a.iata));
+  const retiredCodes = new Set();
+  const kept = [];
+  const newlyRetired = [];
   const currentAgain = [];
-  for (const previous of previousAirports) {
-    const iata = String(previous.iata || '').trim().toUpperCase();
-    // '\\N' is the OpenFlights placeholder for "no IATA code" in pre-2026 entries.
-    if (!iata || iata === '\\N') {
-      continue;
+  const removed = [];
+  const dropped = [];
+
+  const consider = (entry, isNew) => {
+    const iata = String(entry.iata || '').trim().toUpperCase();
+    if (!iata) {
+      console.warn('WARNING: skipping retired entry with no "iata" field:', entry);
+      return;
+    }
+    if (excluded.has(iata)) {
+      dropped.push(iata);
+      return;
     }
     // Upstream carries the code again, so its current entry replaces the retired one.
-    if (known.has(iata)) {
-      if (previous.retired) {
-        currentAgain.push(iata);
-      }
-      continue;
+    if (currentCodes.has(iata)) {
+      currentAgain.push(iata);
+      return;
     }
-    const country = normalizeLegacyCountry(previous.country);
-    // Reassigned code: OpenTravelData lists it today under another country (OEL: the previous
-    // entry says Oryol Yuzhny Airport, United States; today OEL is Orël, RU. BAU: the previous
-    // entry says Bauru Airport, Brazil; today BAU is Bari Centrale Railway Station, IT). Carrying
-    // the old entry forward would resolve the code to a wrong country with no warning — upstream
-    // wins.
+    const country = String(entry.country || '');
+    // Reassigned code: OpenTravelData lists it today under another country (OEL: the retired
+    // entry says Oryol Yuzhny Airport, United States; today OEL is Orël, RU. BAU: the retired
+    // entry says Bauru Airport, Brazil; today BAU is Bari Centrale Railway Station, IT). Keeping
+    // the old entry would resolve the code to a wrong country with no warning — upstream wins.
     const otdCountries = otdCountriesByCode.get(iata);
     const countryIso = countryCodeLookup.byCountry(country)?.iso2;
     if (otdCountries && countryIso && !otdCountries.has(countryIso)) {
-      dropped.push(`${iata} (reassigned: ${country} → ${[...otdCountries].join('/')})`);
-      continue;
+      removed.push(`${iata} (reassigned: ${country} → ${[...otdCountries].join('/')})`);
+      return;
     }
     // Upstream's own duplicate markers are data-quality removals, not retirements.
-    if (/^\[Duplicate\]/i.test(String(previous.name || ''))) {
-      dropped.push(`${iata} (${previous.name})`);
-      continue;
+    if (/^\[Duplicate\]/i.test(String(entry.name || ''))) {
+      removed.push(`${iata} (${entry.name})`);
+      return;
     }
-    known.add(iata);
-    retired.push({
-      ...previous,
-      iata,
-      icao: previous.icao === '\\N' ? '' : previous.icao,
-      country,
-      retired: true,
-    });
-  }
+    kept.push({ ...entry, iata, country });
+    if (isNew) {
+      newlyRetired.push(iata);
+    }
+  };
 
-  // Every code that was retired last run is still current, still retired, or dropped by one of
-  // the two rules above — anything else means the carry-forward itself lost data.
-  const droppedIatas = new Set(dropped.map((d) => d.split(' ')[0]));
-  const lost = [...previouslyRetired].filter((iata) => !known.has(iata) && !droppedIatas.has(iata));
-  if (lost.length) {
-    throw new Error(`retired codes lost by the carry-forward without a rule: ${lost.join(', ')}`);
+  for (const entry of retired) {
+    const iata = String((entry && entry.iata) || '').trim().toUpperCase();
+    // The lookups are find()-based, so a duplicate would resolve arbitrarily.
+    if (iata && retiredCodes.has(iata)) {
+      throw new Error(`${RETIRED_JSON_PATH} lists ${iata} twice; keep one entry per code.`);
+    }
+    retiredCodes.add(iata);
+    consider(entry, false);
   }
-
-  // Review gate: junk upstream removes (placeholder codes, test rows) would otherwise become
-  // permanent entries here without anyone noticing.
-  const newlyRetired = retired.filter((a) => !previouslyRetired.has(a.iata)).map((a) => a.iata);
-  console.log(`Newly retired this run (review before committing): ${newlyRetired.join(', ') || 'none'}`);
-  if (currentAgain.length) {
-    console.log(`Current again (retired entry replaced by upstream's): ${currentAgain.join(', ')}`);
+  for (const entry of previous) {
+    if (!currentCodes.has(entry.iata) && !retiredCodes.has(entry.iata)) {
+      consider(entry, true);
+    }
   }
-  if (dropped.length) {
-    console.log(`Not carried forward: ${dropped.join('; ')}`);
-  }
-  return retired;
+  return { retired: kept, newlyRetired, currentAgain, removed, dropped };
 }
 
 function loadOverrides() {
@@ -212,6 +219,37 @@ function loadOverrides() {
     return [];
   }
   return JSON.parse(raw);
+}
+
+// Manual corrections (see overrides.json / README.md), applied before sorting and assigning
+// ids so overridden and new entries participate in both. `drop: true` is the exclusion list:
+// the code leaves airports.json — the current data here, retired.json in reconcileRetired —
+// and never re-enters retired.json.
+function applyOverrides(airports) {
+  const excluded = new Set();
+  for (const override of loadOverrides()) {
+    if (!override || !override.iata) {
+      console.warn('WARNING: skipping override entry with no "iata" field:', override);
+      continue;
+    }
+    if (override.drop) {
+      excluded.add(String(override.iata).trim().toUpperCase());
+      continue;
+    }
+    const idx = airports.findIndex((a) => a.iata === override.iata);
+    if (idx === -1) {
+      airports.push(
+        Object.assign(
+          { name: '', city: '', country: '', iata: override.iata, icao: '', latitude: '', longitude: '' },
+          override
+        )
+      );
+    } else {
+      airports[idx] = Object.assign({}, airports[idx], override);
+    }
+  }
+  const dropped = airports.filter((a) => excluded.has(a.iata)).map((a) => a.iata);
+  return { airports: airports.filter((a) => !excluded.has(a.iata)), excluded, dropped };
 }
 
 function getCountryName(isoCode) {
@@ -253,12 +291,12 @@ function preferRow(a, b) {
   return Number(a.id) <= Number(b.id) ? a : b;
 }
 
-async function buildAirports(otdCountriesByCode) {
-  // Read before this run overwrites it — see carryForwardRetired.
-  const previousAirports = loadPreviousAirports();
-  const rows = await CSVToJSON().fromFile(AIRPORTS_CSV_PATH);
+// The current entries an OurAirports snapshot produces, one per IATA code. `quiet` silences the
+// duplicate warnings for the pass over last run's snapshot, which already printed them then.
+async function airportsFromCsv(csvPath, { quiet = false } = {}) {
+  const rows = await CSVToJSON().fromFile(csvPath);
 
-  const byIata = new Map();
+  const byIataCode = new Map();
   for (const row of rows) {
     const iata = (row.iata_code || '').trim();
     if (!iata) {
@@ -270,17 +308,19 @@ async function buildAirports(otdCountriesByCode) {
       continue;
     }
 
-    const existing = byIata.get(iata);
+    const existing = byIataCode.get(iata);
     if (existing) {
-      console.warn(`WARNING: duplicate iata_code "${iata}" in source data - keeping one row.`);
-      byIata.set(iata, preferRow(existing, row));
+      if (!quiet) {
+        console.warn(`WARNING: duplicate iata_code "${iata}" in source data - keeping one row.`);
+      }
+      byIataCode.set(iata, preferRow(existing, row));
     } else {
-      byIata.set(iata, row);
+      byIataCode.set(iata, row);
     }
   }
 
-  let airports = [];
-  for (const row of byIata.values()) {
+  const airports = [];
+  for (const row of byIataCode.values()) {
     // Prefer the curated icao_code column; `ident` is an OurAirports internal id
     // for some rows (e.g. "AU-0456"). Fall back to gps_code when it looks like a
     // real ICAO code, then to ident as a last resort.
@@ -304,37 +344,42 @@ async function buildAirports(otdCountriesByCode) {
       longitude: row.longitude_deg,
     });
   }
+  return airports;
+}
 
-  // Apply manual overrides (see overrides.json / README.md) before sorting and
-  // assigning ids, so overridden/new entries participate in both.
-  const overrides = loadOverrides();
-  for (const override of overrides) {
-    if (!override || !override.iata) {
-      console.warn('WARNING: skipping override entry with no "iata" field:', override);
-      continue;
-    }
-    const idx = airports.findIndex((a) => a.iata === override.iata);
-    if (idx === -1) {
-      airports.push(
-        Object.assign(
-          { name: '', city: '', country: '', iata: override.iata, icao: '', latitude: '', longitude: '' },
-          override
-        )
-      );
-    } else {
-      airports[idx] = Object.assign({}, airports[idx], override);
-    }
-  }
+async function buildAirports({ previous, otdCountriesByCode }) {
+  const fresh = await airportsFromCsv(AIRPORTS_CSV_PATH);
+  const { airports: current, excluded, dropped: droppedCurrent } = applyOverrides(fresh);
 
-  const retired = carryForwardRetired(airports, previousAirports, otdCountriesByCode);
-  airports.push(...retired);
-  console.log(`Carried forward ${retired.length} retired IATA codes from the previous airports.json`);
-
-  airports.sort((a, b) => {
-    if (a.iata < b.iata) return -1;
-    if (a.iata > b.iata) return 1;
-    return 0;
+  const reconciled = reconcileRetired({
+    retired: loadRetired(),
+    previous,
+    current,
+    excluded,
+    otdCountriesByCode,
   });
+  const { retired, newlyRetired, currentAgain, removed } = reconciled;
+  const dropped = [...new Set([...droppedCurrent, ...reconciled.dropped])];
+
+  // Review gate: junk upstream removes (placeholder codes, test rows) would otherwise become
+  // permanent entries without anyone noticing — the retired.json diff shows exactly these.
+  console.log(
+    `Newly retired this run (added to retired.json; review its diff before committing): ${newlyRetired.join(', ') || 'none'}`
+  );
+  if (currentAgain.length) {
+    console.log(`Current again (removed from retired.json): ${currentAgain.join(', ')}`);
+  }
+  if (removed.length) {
+    console.log(`Not carried forward (removed from retired.json): ${removed.join('; ')}`);
+  }
+  if (dropped.length) {
+    console.log(`Dropped by overrides.json: ${dropped.join(', ')}`);
+  }
+  writeRetired(retired);
+  console.log(`Carried forward ${retired.length} retired IATA codes from ${RETIRED_JSON_PATH}`);
+
+  let airports = [...current, ...retired.map((a) => ({ ...a, retired: true }))];
+  airports.sort(byIata);
 
   airports = airports.map((a, i) => ({
     id: String(i + 1),
@@ -365,7 +410,7 @@ async function buildAirports(otdCountriesByCode) {
 }
 
 // Returns the cities it wrote and `countriesByCode`: the ISO-2 country of every current
-// OpenTravelData record, keyed by IATA code, for the reassignment check in carryForwardRetired.
+// OpenTravelData record, keyed by IATA code, for the reassignment check in reconcileRetired.
 // Every location type counts, not only cities: a code reassigned to a railway or bus station
 // (BAU: Bauru Airport, BR → Bari Centrale Railway Station, IT) has no city record, and a
 // city-only map would let its dead entry through. A few codes have current records in two
@@ -464,13 +509,32 @@ function buildCities() {
 }
 
 async function main() {
-  download(AIRPORTS_CSV_URL, AIRPORTS_CSV_PATH);
-  download(OTD_POR_URL, OTD_POR_PATH);
+  // What was current last run, read before the download overwrites the snapshot (see
+  // reconcileRetired). Without it no retirement can be detected, so fail rather than
+  // regenerate as if nothing had been retired.
+  if (!fs.existsSync(AIRPORTS_CSV_PATH)) {
+    throw new Error(
+      `${AIRPORTS_CSV_PATH} is missing; the retired-code detection compares it with the fresh download. Restore it (git checkout -- airports.csv) before regenerating.`
+    );
+  }
+  const previous = await airportsFromCsv(AIRPORTS_CSV_PATH, { quiet: true });
 
-  // Cities first: the airport carry-forward checks a retired code's country against
-  // OpenTravelData's current records (see carryForwardRetired).
+  if (OFFLINE) {
+    if (!fs.existsSync(OTD_POR_PATH)) {
+      throw new Error(
+        `--offline needs ${OTD_POR_PATH} from an earlier run; run once without --offline to download it.`
+      );
+    }
+    console.log(`Offline: rebuilding from ${AIRPORTS_CSV_PATH} and ${OTD_POR_PATH}, nothing downloaded.`);
+  } else {
+    download(AIRPORTS_CSV_URL, AIRPORTS_CSV_PATH);
+    download(OTD_POR_URL, OTD_POR_PATH);
+  }
+
+  // Cities first: the retired-code reconciliation checks each code's country against
+  // OpenTravelData's current records (see reconcileRetired).
   const { cities, countriesByCode } = buildCities();
-  const airports = await buildAirports(countriesByCode);
+  const airports = await buildAirports({ previous, otdCountriesByCode: countriesByCode });
 
   console.log(
     `Wrote ${AIRPORTS_JSON_PATH} (${airports.length} entries, ${airports.filter((a) => a.retired).length} retired)`

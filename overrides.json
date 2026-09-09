@@ -1,1 +1,7 @@
-[]
+[
+  {
+    "iata": "SZT",
+    "drop": true,
+    "reason": "San Cristóbal de las Casas airport (Mexico) closed in 2010; OpenTravelData still carries a current record for it, so a retired entry would come back if ever re-seeded."
+  }
+]
