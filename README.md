@@ -96,8 +96,15 @@ retired code to users). Two exceptions, both logged as "Not carried forward":
 
 - Upstream always wins. A code OurAirports still carries resolves to its current airport, and a
   code OpenTravelData now lists under another country was reassigned, so its previous entry is
-  dropped rather than resolve to the wrong country.
+  dropped rather than resolve to the wrong country. That check reads every current OpenTravelData
+  record, not only cities: a code reassigned to a railway or bus station (BAU, once Bauru Airport
+  in Brazil, is now Bari Centrale Railway Station) has no city record.
 - Entries OurAirports marked `[Duplicate]` were data-quality removals, not retirements.
+
+In practice `retired` means "OurAirports no longer lists this code", not "IATA retired this code":
+most carried-forward entries are still current codes in OpenTravelData under the same country
+(many are railway and bus stations OurAirports never carried), some exist there only as expired
+records, and a few are in neither source.
 
 Retired entries are permanent otherwise, so each run prints the codes newly retired by that run;
 review them before committing (upstream removes the odd placeholder or test row too). Deleting an
