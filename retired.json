@@ -220,6 +220,7 @@
 {"iata":"YSR","name":"Nanisivik Airport","city":"Nanisivik","country":"Canada","icao":"CYSR","latitude":"72.982201","longitude":"-84.613602"},
 {"iata":"YVA","name":"Iconi Airport","city":"Moroni","country":"Comoros","icao":"FMCN","latitude":"-11.710800170899999","longitude":"43.2439002991"},
 {"iata":"YXD","name":"Edmonton City Centre (Blatchford Field) Airport","city":"Edmonton","country":"Canada","icao":"CYXD","latitude":"53.5724983215","longitude":"-113.521003723"},
+{"iata":"YZD","name":"Downsview Airport","city":"Toronto","country":"Canada","icao":"CYZD","latitude":"43.74250030517578","longitude":"-79.4655990600586"},
 {"iata":"ZAJ","name":"Zaranj Airport","city":"Zaranj","country":"Afghanistan","icao":"OAZJ","latitude":"30.972222","longitude":"61.865833"},
 {"iata":"ZCN","name":"Celle Airport","city":"Celle","country":"Germany","icao":"ETHC","latitude":"52.59120178222656","longitude":"10.022100448608398"},
 {"iata":"ZHI","name":"Grenchen Airport","city":"Grenchen","country":"Switzerland","icao":"LSZG","latitude":"47.181599","longitude":"7.41719"},

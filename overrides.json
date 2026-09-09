@@ -33,10 +33,5 @@
     "iata": "OSP",
     "drop": true,
     "reason": "Słupsk-Redzikowo: no traffic since at least 2007, airfield demolished from 2016 for the Aegis Ashore site."
-  },
-  {
-    "iata": "YZD",
-    "drop": true,
-    "reason": "Downsview Airport (Toronto) closed April 2024; it was a Bombardier test field with no scheduled service."
   }
 ]
