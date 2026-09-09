@@ -62,7 +62,10 @@ JSON files in place. It pulls from two sources:
 Two more inputs are committed and read by every run: `overrides.json` (manual corrections and
 the exclusion list) and `retired.json` (codes OurAirports no longer carries), both described
 below. `airports.json` and `cities.json` are outputs only; the build never reads them back, so
-they can always be rebuilt from the committed inputs plus the two downloads.
+they can always be rebuilt from the committed inputs plus the two downloads. A run builds and
+validates everything in memory first and only then writes the three outputs and the new
+`airports.csv` snapshot, each via a temp file and rename, so a failed or interrupted run leaves
+the committed files as they were.
 
 `npm run generate -- --offline` rebuilds from the files already on disk (the committed
 `airports.csv` and the OpenTravelData file an earlier run left in the temp directory) without
@@ -123,7 +126,11 @@ file's diff in a pull request is the list of codes retired by that run. Review i
 upstream removes the odd placeholder or test row too, and those should not become permanent
 entries. To keep one out, delete its line from `retired.json` (it only comes back if OurAirports
 lists the code again and later drops it again) or, to keep it out for good, add it to
-`overrides.json` with `"drop": true`.
+`overrides.json` with `"drop": true`. A run that would retire more than 1% of last run's codes
+stops without writing anything, because that is what a truncated download or a renamed upstream
+column looks like; pass `--allow-mass-retirement` when the retirements are real. A malformed
+`retired.json` entry (no valid `iata`, or a code listed twice) also stops the run rather than
+being dropped by the rewrite.
 
 Two kinds of entry are removed from `retired.json` instead, and logged:
 
