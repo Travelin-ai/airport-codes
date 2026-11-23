@@ -4,8 +4,11 @@
 ## Install
 
 ```
-npm install airport-codes
+npm install "git+https://github.com/Travelin-ai/airport-codes.git#semver:^1.0.13"
 ```
+
+This installs the newest tagged release in the range. [Releases](#releases) explains the tags.
+(The public npm package named `airport-codes` is unrelated; always install from this repo.)
 
 ## Usage
 
@@ -72,6 +75,14 @@ the committed files as they were.
 downloading anything. Use it to check that a change to the script or to the committed inputs
 reproduces `airports.json` exactly, or to rebuild after editing `overrides.json` or
 `retired.json` by hand.
+
+### Tests
+
+`npm test` needs Node 18+. It rebuilds `airports.json` from the committed `airports.csv`,
+`overrides.json` and `retired.json` and fails if the committed file differs, so a hand edit to
+`airports.json` fails the test; make the change in `overrides.json` instead. `cities.json` can't
+be rebuilt without the OpenTravelData download, so the test checks its shape and that every
+`country_id` resolves through the pinned `country-code-lookup`.
 
 ### Manual corrections
 
@@ -156,6 +167,46 @@ city-only codes.
 July full rebuild had silently dropped 256 codes; 4 of them upstream had re-added by September,
 the rest came back as retired entries, and the two rules above then removed 22 of those. The
 file starts with the 236 that remained.
+
+## Releases
+
+The apps install a range of tagged versions, not `main`, so a merge reaches them only once it is
+tagged and someone updates them. Every merge to `main` needs a tag.
+
+1. In the pull request, raise `version` in `package.json`:
+   - patch for a data refresh or a fix;
+   - minor for a new field;
+   - major when a field changes meaning or goes away.
+2. After the merge, tag the merge commit on `main` with the version and the pull request:
+
+   ```
+   git checkout main && git pull
+   git tag -a v1.0.14 -m "v1.0.14: tests and the OpenTravelData data license (PR #7)"
+   git push origin v1.0.14
+   ```
+
+3. An app depends on a range of those tags:
+
+   ```json
+   "airport-codes": "git+https://github.com/Travelin-ai/airport-codes.git#semver:^1.0.13"
+   ```
+
+   `npm ci` installs the version in the app's lockfile, and `npm update airport-codes` moves the
+   app to the newest tag in its range. A new major version needs the range changed by hand.
+
+## Data license
+
+`cities.json` is built from [OpenTravelData](https://github.com/opentraveldata/opentraveldata) and used under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). This repo changes it:
+
+- it drops expired records;
+- it keeps one city record per code (preferring a pure city record over combined city/airport ones);
+- it reshapes the rows into the `cities.json` fields.
+
+The build also reads OpenTravelData to decide which retired codes in `retired.json` were reassigned, but copies none of its data into `airports.json`.
+
+The current (non-retired) entries in `airports.json` are built from [OurAirports](https://github.com/davidmegginson/ourairports-data), whose data is in the public domain.
+
+The code in this repo is under the ISC license.
 
 ## Thanks
 

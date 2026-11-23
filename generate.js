@@ -635,7 +635,20 @@ async function main() {
   console.log(`Wrote ${CITIES_JSON_PATH} (${cities.length} entries)`);
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  buildAirports,
+  airportsFromCsv,
+  reconcileRetired,
+  formatRetired,
+  AIRPORTS_CSV_PATH,
+  AIRPORTS_JSON_PATH,
+  RETIRED_JSON_PATH,
+  CITIES_JSON_PATH,
+};
