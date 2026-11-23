@@ -4,11 +4,11 @@
 ## Install
 
 ```
-npm install "git+https://github.com/Travelin-ai/airport-codes.git#semver:^1.0.13"
+npm install "@travelin-ai/airport-codes@git+https://github.com/Travelin-ai/airport-codes.git#semver:^1.0.15"
 ```
 
 This installs the newest tagged release in the range. [Releases](#releases) explains the tags.
-(The public npm package named `airport-codes` is unrelated; always install from this repo.)
+The package is named `@travelin-ai/airport-codes`, as the unscoped `airport-codes` on npm is an unrelated package.
 
 ## Usage
 
@@ -19,7 +19,7 @@ const {
   getAirportFromIATACode,
   getCityFromIATACode,
   getCountryFromIATACode,
-} = require('airport-codes');
+} = require('@travelin-ai/airport-codes');
 
 getAirportFromIATACode('JFK');
 // => { id: '...', name: 'John F. Kennedy International Airport', city: 'New York',
@@ -39,8 +39,8 @@ don't have one fall back to the OurAirports identifier (e.g. `BR-2149`), so don'
 If you'd like only the raw JSON data, import it directly:
 
 ```javascript
-const airports = require('airport-codes/airports.json');
-const cities = require('airport-codes/cities.json');
+const airports = require('@travelin-ai/airport-codes/airports.json');
+const cities = require('@travelin-ai/airport-codes/cities.json');
 ```
 
 ## Update the list of Airport Codes
@@ -188,10 +188,10 @@ tagged and someone updates them. Every merge to `main` needs a tag.
 3. An app depends on a range of those tags:
 
    ```json
-   "airport-codes": "git+https://github.com/Travelin-ai/airport-codes.git#semver:^1.0.13"
+   "@travelin-ai/airport-codes": "git+https://github.com/Travelin-ai/airport-codes.git#semver:^1.0.15"
    ```
 
-   `npm ci` installs the version in the app's lockfile, and `npm update airport-codes` moves the
+   `npm ci` installs the version in the app's lockfile, and `npm update @travelin-ai/airport-codes` moves the
    app to the newest tag in its range. A new major version needs the range changed by hand.
 
 ## Data license
